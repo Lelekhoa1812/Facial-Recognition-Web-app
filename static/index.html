@@ -12,13 +12,22 @@
     <img id="cam" src="{{ url_for('video_feed') }}">
   </div>
   <button id="showSnaps">📸 Snapshots</button>
-
   <!-- Modal -->
   <div id="modal" class="modal">
      <span class="close">&times;</span>
      <div id="gallery" class="gallery"></div>
   </div>
-
+  <!-- Register new face -->
+  <button id="registerBtn">➕ Register Unknown</button>
+  <div id="registerModal" class="modal">
+    <div class="modal-content">
+      <span class="closeReg">&times;</span>
+      <h3>Register New Face</h3>
+      <img id="facePreview" style="max-height:160px"/><br/>
+      <input type="text" id="newName" placeholder="Enter name"><br/>
+      <button id="confirmReg">Confirm</button>
+    </div>
+  </div>
   <script src="/static/script.js"></script>
 </body>
 </html>
