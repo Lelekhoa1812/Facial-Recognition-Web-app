@@ -1,10 +1,14 @@
+# Core
 flask
+flask-cors
+gunicorn
+numpy
 opencv-python-headless
-face_recognition==1.3.0
-dlib==19.24.0
+face_recognition
+
+# Emotion & Anti-Spoofing
 fer
 onnxruntime
-numpy
-deepface
-gunicorn
-flask-cors
+
+# Optional (but larger model for emotion)
+# deepface ← Commented out if using FER already

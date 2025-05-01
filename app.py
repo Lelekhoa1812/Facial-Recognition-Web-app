@@ -1,9 +1,11 @@
 import os, cv2, glob
 import numpy as np
 from datetime import datetime
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, Response, jsonify, request
 import face_recognition
 from fer import FER
+import base64
+import threading
 import onnxruntime as ort
 
 # ──────────────────────── Config paths ────────────────────────
@@ -57,7 +59,9 @@ saved_ids = set()   # avoid duplicate snapshots in one run
 
 # ——— Video generator
 def gen_frames():
-    cam = cv2.VideoCapture(0) # Start streaming
+    if 'cam' not in app.config:
+        app.config['cam'] = cv2.VideoCapture(0) # Start streaming if camera enabled
+        cam = app.config['cam'] 
     while True:
         ok, frame = cam.read()
         if not ok: break
@@ -114,8 +118,6 @@ def snapshots():
     return jsonify(pics)
 
 # ——— Register unknown faces
-from flask import request
-import base64
 @app.route("/register", methods=["POST"])
 def register_face():
     data = request.get_json()
