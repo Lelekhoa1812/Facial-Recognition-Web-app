@@ -2,3 +2,4 @@
 models
 # Image files (e.g., PNG and JPG couldn't really uploaded as binary file) so use Desktop instead 
 known_faces
+# Using `push --force` each time pushing to HF and later upload these folder separately to avoid error.
