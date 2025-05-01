@@ -1,0 +1,7 @@
+flask
+opencv-python-headless 
+face_recognition
+fer
+onnxruntime
+numpy
+deepface

@@ -1,8 +1,8 @@
 ---
 title: Facial Recognition
-emoji: ⚡
-colorFrom: blue
-colorTo: red
+emoji: 📸
+colorFrom: indigo
+colorTo: green
 sdk: docker
 pinned: false
 license: apache-2.0
