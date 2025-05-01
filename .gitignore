@@ -1,0 +1,4 @@
+# Model files have to be resolved and staged and push to repo using LFS 
+models
+# Image files (e.g., PNG and JPG couldn't really uploaded as binary file) so use Desktop instead 
+known_faces
