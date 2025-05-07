@@ -1,3 +1,4 @@
+# Access site: https://binkhoale1812-facial-recognition.hf.space/
 import os, cv2, glob, base64
 import numpy as np
 from flask import Flask, render_template, Response, jsonify, request
@@ -9,10 +10,12 @@ from torchvision import transforms
 from mobilefacenet import MobileFaceNet
 
 # ───── Setup ─────
-KNOWN_DIR, SNAP_DIR = "known_faces", "snapshots"
-# EMBED_MODEL = "models/mobilefacenet.pt"
 LIVENESS_MODEL = "models/model1.onnx"
+DETECTION_MODEL = "models/mobilefacenet.pt"
 
+ROOT_DIR = "/home/user/data"
+KNOWN_DIR = os.path.join(ROOT_DIR, "known_faces")
+SNAP_DIR  = os.path.join(ROOT_DIR, "snapshots")
 os.makedirs(KNOWN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
@@ -25,7 +28,7 @@ live_sess = ort.InferenceSession(LIVENESS_MODEL, providers=["CPUExecutionProvide
 # ───── Init PT models ─────
 device = torch.device("cpu")
 embed_model = MobileFaceNet().to(device)
-embed_model.load_state_dict(torch.load("models/mobilefacenet.pt", map_location=device))
+embed_model.load_state_dict(torch.load(DETECTION_MODEL, map_location=device))
 embed_model.eval()
 
 # ───── Storage ─────
