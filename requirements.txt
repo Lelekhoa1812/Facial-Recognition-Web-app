@@ -12,3 +12,5 @@ onnxruntime
 
 # Facial-similarity
 mediapipe
+torch
+torchaudio
