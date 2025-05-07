@@ -10,7 +10,7 @@ from mobilefacenet import MobileFaceNet
 
 # ───── Setup ─────
 KNOWN_DIR, SNAP_DIR = "known_faces", "snapshots"
-EMBED_MODEL = "models/mobilefacenet.pt"
+# EMBED_MODEL = "models/mobilefacenet.pt"
 LIVENESS_MODEL = "models/model1.onnx"
 
 os.makedirs(KNOWN_DIR, exist_ok=True)
