@@ -9,7 +9,8 @@
 <body>
   <h2>Live Camera Stream</h2>
   <div id="video-box">
-    <img id="cam" src="{{ url_for('video_feed') }}">
+    <video id="cam" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
   </div>
   <button id="showSnaps">📸 Snapshots</button>
   <!-- Modal -->

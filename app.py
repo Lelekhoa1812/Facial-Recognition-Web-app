@@ -35,16 +35,17 @@ embed_model = MobileFaceNet().to(device)
 embed_model.load_state_dict(torch.load(DETECTION_MODEL, map_location=device))
 embed_model.eval()
 
-# ───── Storage ─────
-known_names, known_feats = [], []
-
-# ───── Feature Embedding ─────
 transform = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((112, 112)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
 ])
+
+# ───── Storage ─────
+known_names, known_feats = [], []
+
+# ───── Feature Embedding ─────
 def get_embedding(face_img):
     face_tensor = transform(face_img).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -81,73 +82,55 @@ for fn in os.listdir(KNOWN_DIR):
 def cosine_sim(a, b): return np.dot(a, b)
 
 # ───── Snapshot ─────
-def save_snapshot(name, img):
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fp = os.path.join(SNAP_DIR, f"{name}_{ts}.jpg")
-    cv2.imwrite(fp, img)
+# def save_snapshot(name, img):
+#     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+#     fp = os.path.join(SNAP_DIR, f"{name}_{ts}.jpg")
+#     cv2.imwrite(fp, img)
 
 # ───── Flask App ─────
 app = Flask(__name__)
 saved_ids = set()
 
-def gen_frames():
-    if 'cam' not in app.config:
-        app.config['cam'] = cv2.VideoCapture(0)
-    cam = app.config['cam']
-
-    while True:
-        ret, frame = cam.read()
-        if not ret: break
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = mp_face.process(rgb)
-
-        if results.detections:
-            for det in results.detections:
-                box = det.location_data.relative_bounding_box
-                h, w = frame.shape[:2]
-                x, y, bw, bh = int(box.xmin * w), int(box.ymin * h), int(box.width * w), int(box.height * h)
-                face = frame[y:y+bh, x:x+bw]
-                emb = get_embedding(face)
-
-                # Match
-                name, best_sim = "Unknown", 0
-                for kname, kfeat in zip(known_names, known_feats):
-                    sim = cosine_sim(emb, kfeat)
-                    if sim > 0.6 and sim > best_sim:
-                        name, best_sim = kname, sim
-
-                # Liveness
-                live = is_live_face(face)
-                label = f"{name}"
-                color = (0,255,0) if live else (0,0,255)
-
-                cv2.rectangle(frame, (x, y), (x+bw, y+bh), color, 2)
-                cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-                if live and name == "Unknown":
-                    _, buf_crop = cv2.imencode('.jpg', face)
-                    b64_crop = base64.b64encode(buf_crop).decode('utf-8')
-                    app.config['last_unknown_face'] = f"data:image/jpeg;base64,{b64_crop}"
-                    cv2.putText(frame, "[Register?]", (x, y + bh + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
-
-                if live and name != "Unknown" and name not in saved_ids:
-                    save_snapshot(name, face)
-                    saved_ids.add(name)
-
-        ret, buf = cv2.imencode('.jpg', frame)
-        yield b'--frame\r\nContent-Type:image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n'
-
 @app.route("/")
 def home(): return render_template("index.html")
 
-@app.route("/video_feed")
-def video_feed():
-    return Response(gen_frames(), mimetype="multipart/x-mixed-replace; boundary=frame")
+@app.route("/process_frame", methods=["POST"])
+def process_frame():
+    data = request.get_json()
+    img_data = data.get("image")
+    if not img_data:
+        return jsonify({"error": "No image provided"}), 400
+    img_bytes = base64.b64decode(img_data.split(',')[1])
+    img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = mp_face.process(rgb)
+    faces = []
+    # Process frame if detected
+    if results.detections:
+        for det in results.detections:
+            b = det.location_data.relative_bounding_box
+            h, w = img.shape[:2]
+            x, y, bw, bh = int(b.xmin*w), int(b.ymin*h), int(b.width*w), int(b.height*h)
+            crop = img[y:y+bh, x:x+bw]
+            feat = embed_model(transform(crop).unsqueeze(0)).detach().cpu().numpy()[0]
+            feat = feat / np.linalg.norm(feat)
+            name, best_sim = "Unknown", 0
+            for kn, kf in zip(known_names, known_feats):
+                sim = cosine_sim(feat, kf)
+                if sim > 0.6 and sim > best_sim:
+                    name, best_sim = kn, sim
+            live = is_live_face(crop)
+            faces.append({
+                "name": name,
+                "live": live,
+                "box": [x, y, bw, bh]
+            })
+    return jsonify(faces)
 
 @app.route("/snapshots")
 def snapshots():
-    pics = sorted(glob.glob(f"{SNAP_DIR}/*.jpg"), reverse=True)
-    return jsonify([p.replace("\\", "/") for p in pics])
+    from glob import glob
+    return jsonify(sorted(glob(f"{SNAP_DIR}/*.jpg"), reverse=True))
 
 @app.route("/register", methods=["POST"])
 def register_face():
@@ -155,7 +138,7 @@ def register_face():
     name, img_data = data.get("name"), data.get("image")
     if not name or not img_data:
         return jsonify({"error": "Missing name/image"}), 400
-
+    # Decode image
     img_bytes = base64.b64decode(img_data.split(',')[1])
     img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
     cv2.imwrite(os.path.join(KNOWN_DIR, f"{name}.jpg"), img)
