@@ -16,8 +16,12 @@ DETECTION_MODEL = "models/mobilefacenet.pt"
 ROOT_DIR = "/data"
 KNOWN_DIR = os.path.join(ROOT_DIR, "known_faces")
 SNAP_DIR  = os.path.join(ROOT_DIR, "snapshots")
-os.makedirs(KNOWN_DIR, exist_ok=True)
-os.makedirs(SNAP_DIR, exist_ok=True)
+def ensure_dirs():
+    try:
+        os.makedirs(KNOWN_DIR, exist_ok=True)
+        os.makedirs(SNAP_DIR, exist_ok=True)
+    except Exception as e:
+        print("Error when creating img directories", e)
 
 # ───── Init MediaPipe Face Detection ─────
 mp_face = mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
@@ -161,4 +165,5 @@ def register_face():
     return jsonify({"success": True}), 200
 
 if __name__ == "__main__":
+    ensure_dirs()  # Ensure folder are uploaded
     app.run(host="0.0.0.0", port=7860)

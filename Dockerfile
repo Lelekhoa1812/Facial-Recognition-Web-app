@@ -10,6 +10,9 @@ ENV APP_HOME=/data
 WORKDIR ${APP_HOME}
 COPY . .
 
+# Resolve Fontconfig Warnings
+ENV MPLCONFIGDIR=/tmp
+
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
