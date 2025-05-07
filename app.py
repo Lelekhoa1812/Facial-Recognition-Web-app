@@ -4,10 +4,13 @@ from flask import Flask, render_template, Response, jsonify, request
 from datetime import datetime
 import mediapipe as mp
 import onnxruntime as ort
+import torch
+from torchvision import transforms
+from mobilefacenet import MobileFaceNet
 
 # ───── Setup ─────
 KNOWN_DIR, SNAP_DIR = "known_faces", "snapshots"
-EMBED_MODEL = "models/mobilefacenet.onnx"
+EMBED_MODEL = "models/mobilefacenet.pt"
 LIVENESS_MODEL = "models/model1.onnx"
 
 os.makedirs(KNOWN_DIR, exist_ok=True)
@@ -17,19 +20,30 @@ os.makedirs(SNAP_DIR, exist_ok=True)
 mp_face = mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
 
 # ───── Init ONNX models ─────
-embed_sess = ort.InferenceSession(EMBED_MODEL, providers=["CPUExecutionProvider"])
 live_sess = ort.InferenceSession(LIVENESS_MODEL, providers=["CPUExecutionProvider"])
+
+# ───── Init PT models ─────
+device = torch.device("cpu")
+embed_model = MobileFaceNet(embedding_size=128).to(device)
+embed_model.load_state_dict(torch.load("models/mobilefacenet.pt", map_location=device))
+embed_model.eval()
 
 # ───── Storage ─────
 known_names, known_feats = [], []
 
 # ───── Feature Embedding ─────
+transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((112, 112)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+])
 def get_embedding(face_img):
-    face_resized = cv2.resize(face_img, (112,112)).astype(np.float32)
-    face_resized = (face_resized - 127.5) / 128.0  # Normalize
-    face_input = np.transpose(face_resized, (2,0,1))[None]
-    emb = embed_sess.run(None, {"input": face_input})[0]
+    face_tensor = transform(face_img).unsqueeze(0).to(device)
+    with torch.no_grad():
+        emb = embed_model(face_tensor).cpu().numpy()
     return emb[0] / np.linalg.norm(emb[0])
+
 
 # ───── Liveness Detection ─────
 def is_live_face(img):
