@@ -1,7 +1,7 @@
 ---
 title: Facial Recognition
-emoji: 🏆
-colorFrom: green
+emoji: 🕵
+colorFrom: indigo
 colorTo: purple
 sdk: docker
 pinned: false
