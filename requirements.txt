@@ -14,3 +14,4 @@ onnxruntime
 mediapipe
 torch
 torchaudio
+torchvision
