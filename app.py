@@ -24,7 +24,7 @@ live_sess = ort.InferenceSession(LIVENESS_MODEL, providers=["CPUExecutionProvide
 
 # ───── Init PT models ─────
 device = torch.device("cpu")
-embed_model = MobileFaceNet(embedding_size=128).to(device)
+embed_model = MobileFaceNet().to(device)
 embed_model.load_state_dict(torch.load("models/mobilefacenet.pt", map_location=device))
 embed_model.eval()
 

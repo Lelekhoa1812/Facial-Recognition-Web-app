@@ -15,3 +15,4 @@ mediapipe
 torch
 torchaudio
 torchvision
+torch-scope
