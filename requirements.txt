@@ -1,14 +1,14 @@
-# Core
+# Server
 flask
 flask-cors
 gunicorn
+
+# Utils
 numpy
 opencv-python-headless
-face_recognition
 
-# Emotion & Anti-Spoofing
-fer
+# Anti-Spoofing
 onnxruntime
 
-# Optional (but larger model for emotion)
-# deepface ← Commented out if using FER already
+# Facial-similarity
+insightface
