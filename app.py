@@ -1,53 +1,71 @@
 import os, cv2, glob, base64
 import numpy as np
-from datetime import datetime
 from flask import Flask, render_template, Response, jsonify, request
-from insightface.app import FaceAnalysis
+from datetime import datetime
+import mediapipe as mp
 import onnxruntime as ort
 
 # ───── Setup ─────
 KNOWN_DIR, SNAP_DIR = "known_faces", "snapshots"
-MODEL_PATH = "models/model1.onnx"
+EMBED_MODEL = "models/mobilefacenet.onnx"
+LIVENESS_MODEL = "models/model1.onnx"
+
 os.makedirs(KNOWN_DIR, exist_ok=True)
 os.makedirs(SNAP_DIR, exist_ok=True)
 
-# ───── Init FaceAnalysis (InsightFace) ─────
-faceapp = FaceAnalysis(name="buffalo_l", providers=['CPUExecutionProvider'])
-faceapp.prepare(ctx_id=0, det_size=(640, 640))
+# ───── Init MediaPipe Face Detection ─────
+mp_face = mp.solutions.face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
 
-# ───── Init Anti-Spoof Model ─────
-liveness_sess = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
+# ───── Init ONNX models ─────
+embed_sess = ort.InferenceSession(EMBED_MODEL, providers=["CPUExecutionProvider"])
+live_sess = ort.InferenceSession(LIVENESS_MODEL, providers=["CPUExecutionProvider"])
 
-# ───── Load known faces ─────
+# ───── Storage ─────
 known_names, known_feats = [], []
-for fn in os.listdir(KNOWN_DIR):
-    path = os.path.join(KNOWN_DIR, fn)
-    img = cv2.imread(path)
-    faces = faceapp.get(img)
-    if faces:
-        known_names.append(os.path.splitext(fn)[0])
-        known_feats.append(faces[0].normed_embedding)
 
-# ───── Helpers ─────
-def cosine_sim(a, b): return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+# ───── Feature Embedding ─────
+def get_embedding(face_img):
+    face_resized = cv2.resize(face_img, (112,112)).astype(np.float32)
+    face_resized = (face_resized - 127.5) / 128.0  # Normalize
+    face_input = np.transpose(face_resized, (2,0,1))[None]
+    emb = embed_sess.run(None, {"input": face_input})[0]
+    return emb[0] / np.linalg.norm(emb[0])
 
+# ───── Liveness Detection ─────
 def is_live_face(img):
     try:
-        inp = cv2.resize(img, (224, 224)).astype(np.float32) / 255.0
-        inp = inp.transpose(2, 0, 1)[None]
-        spoil, live = liveness_sess.run(None, {"input": inp})[0][0]
-        return live > spoil
+        resized = cv2.resize(img, (224, 224)).astype(np.float32) / 255.0
+        input_blob = resized.transpose(2, 0, 1)[np.newaxis]
+        spoof, live = live_sess.run(None, {"input": input_blob})[0][0]
+        return live > spoof
     except Exception as e:
         print("Liveness error:", e)
         return False
 
+# ───── Load Known Faces ─────
+for fn in os.listdir(KNOWN_DIR):
+    path = os.path.join(KNOWN_DIR, fn)
+    img = cv2.imread(path)
+    if img is not None:
+        results = mp_face.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        if results.detections:
+            bboxC = results.detections[0].location_data.relative_bounding_box
+            h, w = img.shape[:2]
+            x, y, bw, bh = int(bboxC.xmin * w), int(bboxC.ymin * h), int(bboxC.width * w), int(bboxC.height * h)
+            face = img[y:y+bh, x:x+bw]
+            known_feats.append(get_embedding(face))
+            known_names.append(os.path.splitext(fn)[0])
+
+# ───── Similarity ─────
+def cosine_sim(a, b): return np.dot(a, b)
+
+# ───── Snapshot ─────
 def save_snapshot(name, img):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     fp = os.path.join(SNAP_DIR, f"{name}_{ts}.jpg")
     cv2.imwrite(fp, img)
-    print("📸 Saved:", fp)
 
-# ───── Flask ─────
+# ───── Flask App ─────
 app = Flask(__name__)
 saved_ids = set()
 
@@ -59,37 +77,41 @@ def gen_frames():
     while True:
         ret, frame = cam.read()
         if not ret: break
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = mp_face.process(rgb)
 
-        faces = faceapp.get(frame)
-        for face in faces:
-            box = face.bbox.astype(int)
-            top, right, bottom, left = box[1], box[2], box[3], box[0]
-            crop = frame[top:bottom, left:right]
-            name = "Unknown"
-            best_sim = 0
+        if results.detections:
+            for det in results.detections:
+                box = det.location_data.relative_bounding_box
+                h, w = frame.shape[:2]
+                x, y, bw, bh = int(box.xmin * w), int(box.ymin * h), int(box.width * w), int(box.height * h)
+                face = frame[y:y+bh, x:x+bw]
+                emb = get_embedding(face)
 
-            for feat, kname in zip(known_feats, known_names):
-                sim = cosine_sim(face.normed_embedding, feat)
-                if sim > 0.6 and sim > best_sim:
-                    name, best_sim = kname, sim
+                # Match
+                name, best_sim = "Unknown", 0
+                for kname, kfeat in zip(known_names, known_feats):
+                    sim = cosine_sim(emb, kfeat)
+                    if sim > 0.6 and sim > best_sim:
+                        name, best_sim = kname, sim
 
-            # Anti-spoofing
-            live = is_live_face(crop)
-            label = f"{name}"
-            color = (0, 255, 0) if live else (0, 0, 255)
+                # Liveness
+                live = is_live_face(face)
+                label = f"{name}"
+                color = (0,255,0) if live else (0,0,255)
 
-            cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
-            cv2.putText(frame, label, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                cv2.rectangle(frame, (x, y), (x+bw, y+bh), color, 2)
+                cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-            if live and name == "Unknown":
-                _, buf_crop = cv2.imencode('.jpg', crop)
-                b64_crop = base64.b64encode(buf_crop).decode('utf-8')
-                app.config['last_unknown_face'] = f"data:image/jpeg;base64,{b64_crop}"
-                cv2.putText(frame, "[Unknown - click to register]", (left, bottom + 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                if live and name == "Unknown":
+                    _, buf_crop = cv2.imencode('.jpg', face)
+                    b64_crop = base64.b64encode(buf_crop).decode('utf-8')
+                    app.config['last_unknown_face'] = f"data:image/jpeg;base64,{b64_crop}"
+                    cv2.putText(frame, "[Register?]", (x, y + bh + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
 
-            if live and name != "Unknown" and name not in saved_ids:
-                save_snapshot(name, crop); saved_ids.add(name)
+                if live and name != "Unknown" and name not in saved_ids:
+                    save_snapshot(name, face)
+                    saved_ids.add(name)
 
         ret, buf = cv2.imencode('.jpg', frame)
         yield b'--frame\r\nContent-Type:image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n'
@@ -111,22 +133,15 @@ def register_face():
     data = request.get_json()
     name, img_data = data.get("name"), data.get("image")
     if not name or not img_data:
-        return jsonify({"error": "Name and image required"}), 400
+        return jsonify({"error": "Missing name/image"}), 400
 
     img_bytes = base64.b64decode(img_data.split(',')[1])
-    nparr = np.frombuffer(img_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    save_path = os.path.join(KNOWN_DIR, f"{name}.jpg")
-    cv2.imwrite(save_path, img)
-
-    faces = faceapp.get(img)
-    if faces:
-        known_feats.append(faces[0].normed_embedding)
-        known_names.append(name)
-        print(f"✅ Registered new face: {name}")
-        return jsonify({"success": True}), 200
-    else:
-        return jsonify({"error": "Encoding failed"}), 500
+    img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    cv2.imwrite(os.path.join(KNOWN_DIR, f"{name}.jpg"), img)
+    emb = get_embedding(img)
+    known_names.append(name)
+    known_feats.append(emb)
+    return jsonify({"success": True}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=7860)

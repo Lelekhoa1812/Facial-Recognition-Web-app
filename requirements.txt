@@ -11,4 +11,4 @@ opencv-python-headless
 onnxruntime
 
 # Facial-similarity
-insightface
+mediapipe
