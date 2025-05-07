@@ -13,7 +13,7 @@ from mobilefacenet import MobileFaceNet
 LIVENESS_MODEL = "models/model1.onnx"
 DETECTION_MODEL = "models/mobilefacenet.pt"
 
-ROOT_DIR = "/home/user/data"
+ROOT_DIR = "/data"
 KNOWN_DIR = os.path.join(ROOT_DIR, "known_faces")
 SNAP_DIR  = os.path.join(ROOT_DIR, "snapshots")
 os.makedirs(KNOWN_DIR, exist_ok=True)
