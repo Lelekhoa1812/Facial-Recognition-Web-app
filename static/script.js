@@ -18,7 +18,7 @@ setInterval(async () => {
   canvas.height = video.videoHeight;
   ctx.drawImage(video, 0, 0);
   const base64 = canvas.toDataURL("image/jpeg");
-
+  // Handshake with FastAPI
   try {
     const res = await fetch("/process_frame", {
       method: "POST",
@@ -26,9 +26,26 @@ setInterval(async () => {
       body: JSON.stringify({ image: base64 })
     });
     const faces = await res.json();
+    // Redraw base image
+    ctx.drawImage(video, 0, 0);
+    // Iterate between faces
+    faces.forEach(face => {
+      const [x, y, bw, bh] = face.box;
+      ctx.strokeStyle = face.live ? "lime" : "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, bw, bh);
+
+      ctx.fillStyle = face.live ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
+      ctx.fillRect(x, y - 20, bw, 20);
+
+      ctx.fillStyle = "#000";
+      ctx.font = "14px sans-serif";
+      ctx.fillText(face.name, x + 5, y - 5);
+    });
+    // Show register button only for live unknowns
     const unknown = faces.find(f => f.name === "Unknown" && f.live);
     if (unknown) {
-      latestUnknownFace = base64; // Save unknown face snapshot
+      latestUnknownFace = base64;
       document.getElementById("registerBtn").style.display = "inline-block";
     } else {
       latestUnknownFace = null;
@@ -38,6 +55,7 @@ setInterval(async () => {
     console.error("Failed to send frame:", e);
   }
 }, 2000); // Every 2 seconds
+
 
 // =======================
 // 🖼️ Snapshot Gallery Modal
